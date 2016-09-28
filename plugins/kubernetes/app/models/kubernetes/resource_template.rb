@@ -115,6 +115,7 @@ module Kubernetes
     end
 
     def set_namespace
+      return if template[:metadata][:namespace] == "kube-system"
       template[:metadata][:namespace] = @doc.deploy_group.kubernetes_namespace
     end
 

@@ -72,6 +72,11 @@ describe Kubernetes::ResourceTemplate do
       )
     end
 
+    it "keeps kube-system namespace because it is a unique system namespace" do
+      assert doc.raw_template.sub!("name: some-project-rc\n", "name: some-project-rc\n  namespace: kube-system\n")
+      template.to_hash.fetch(:metadata).fetch(:namespace).must_equal 'kube-system'
+    end
+
     describe "containers" do
       let(:result) { template.to_hash }
       let(:container) { result.fetch(:spec).fetch(:template).fetch(:spec).fetch(:containers).first }
