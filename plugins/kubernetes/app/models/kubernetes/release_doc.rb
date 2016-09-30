@@ -87,7 +87,7 @@ module Kubernetes
       elsif service.running?
         'Service already running'
       else
-        data = service_hash
+        data = resource_template.detect { |r| r['kind'] == 'Service' }
         if data.fetch(:metadata).fetch(:name).include?(Kubernetes::Role::GENERATED)
           raise(
             Samson::Hooks::UserError,
@@ -108,10 +108,6 @@ module Kubernetes
       kubernetes_role.config_file
     end
 
-    def deploy_template
-      parsed_config_file.deploy || parsed_config_file.job
-    end
-
     def desired_pod_count
       @desired_pod_count ||= begin
         if daemon_set?
@@ -129,6 +125,13 @@ module Kubernetes
       deploy_group.kubernetes_namespace
     end
 
+    # run on unsaved mock ReleaseDoc to test template and secrets before we save or create a build
+    def verify_template
+      config = primary_resource(parsed_config_file.elements)
+      template = Kubernetes::ResourceTemplate.new(self, config)
+      template.set_secrets
+    end
+
     private
 
     def resource_name
@@ -141,14 +144,40 @@ module Kubernetes
 
     # TODO: make this an object and move more logic there
     def resource
-      @resource ||= Array(resource_template).detect do |config|
+      @resource ||= primary_resource(resource_template)
+    end
+
+    def primary_resource(elements)
+      Array.wrap(elements).detect do |config|
         Kubernetes::RoleConfigFile::PRIMARY.include?(config.fetch('kind'))
       end
     end
 
-    # TODO: fill out service here and store generated service ... then use this to read it back
+    def resource_template=(value)
+      @resource_template = nil
+      super
+    end
+
+    def resource_template
+      @resource_template ||= Array.wrap(super).map(&:with_indifferent_access)
+    end
+
+    # dynamically fill out the templates and store the result
     def store_resource_template
-      self.resource_template = [ResourceTemplate.new(self).to_hash] + parsed_config_file.secondary
+      self.resource_template = parsed_config_file.elements.map do |resource|
+        case resource['kind']
+        when 'Service'
+          resource[:metadata][:name] = kubernetes_role.service_name
+          resource[:metadata][:namespace] = namespace
+
+          # For now, create a NodePort for each service, so we can expose any
+          # apps running in the Kubernetes cluster to traffic outside the cluster.
+          resource[:spec][:type] = 'NodePort'
+          resource
+        else
+          ResourceTemplate.new(self, resource).to_hash
+        end
+      end
     end
 
     # Create new client as 'Deployment' API is on different path then 'v1'
@@ -220,22 +249,6 @@ module Kubernetes
       return @service if defined?(@service)
       @service = if kubernetes_role.service_name.present?
         Kubernetes::Service.new(role: kubernetes_role, deploy_group: deploy_group)
-      end
-    end
-
-    def service_hash
-      @service_hash || begin
-        hash = parsed_config_file.service ||
-          raise(Samson::Hooks::UserError, "Unable to find Service definition in #{template_name}")
-
-        hash.fetch(:metadata)[:name] = kubernetes_role.service_name
-        hash.fetch(:metadata)[:namespace] = namespace
-
-        # For now, create a NodePort for each service, so we can expose any
-        # apps running in the Kubernetes cluster to traffic outside the cluster.
-        hash.fetch(:spec)[:type] = 'NodePort'
-
-        hash
       end
     end
 
