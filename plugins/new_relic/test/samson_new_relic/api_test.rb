@@ -37,7 +37,7 @@ describe SamsonNewRelic::Api do
 
   describe '.metrics' do
     before do
-      applications = self.applications.map { |a| [a.fetch('name'), SamsonNewRelic::Api::Application.new(a)] }.to_h
+      applications = applications().map { |a| [a.fetch('name'), SamsonNewRelic::Api::Application.new(a)] }.to_h
       SamsonNewRelic::Api.stubs(applications: applications)
     end
     subject { SamsonNewRelic::Api.metrics(['Production', 'Staging'], initial) }
