@@ -83,12 +83,19 @@ module Kubernetes
       elsif job?
         extension_client.delete_job(resource_name, namespace)
       end
+
+      if service&.running? && !@previous_deploy
+        client.delete_service(service.name, namespace)
+      end
     end
 
     def ensure_service
       if service.nil?
         'no Service defined'
       elsif service.running?
+        # ideally we should update, but that is not supported
+        # and delete+create would mean interrupting service
+        # TODO: warn if the running definition does not match the requested definition
         'Service already running'
       else
         data = service_hash

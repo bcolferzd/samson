@@ -190,10 +190,10 @@ describe Kubernetes::ReleaseDoc do
   describe '#revert' do
     let(:client) { doc.send(:extension_client) }
 
+    before { doc.instance_variable_set(:'@deployed', true) }
+
     describe "deployment" do
       before do
-        doc.resource_template['kind'] = 'Deployment'
-        doc.instance_variable_set(:'@deployed', true)
         doc.instance_variable_set(:'@new_deploy', deployment_stub(3))
       end
 
@@ -222,7 +222,6 @@ describe Kubernetes::ReleaseDoc do
     describe "daemonset" do
       before do
         doc.resource_template['kind'] = 'DaemonSet'
-        doc.instance_variable_set(:'@deployed', true)
         doc.instance_variable_set(:'@new_deploy', daemonset_stub(3, 0))
       end
 
@@ -255,11 +254,30 @@ describe Kubernetes::ReleaseDoc do
     describe 'job' do
       before do
         doc.resource_template['kind'] = 'Job'
-        doc.instance_variable_set(:'@deployed', true)
       end
 
       it "is deleted" do
         client.expects(:delete_job)
+        doc.revert
+      end
+    end
+
+    describe 'service' do
+      it "does nothing when there is no service" do
+        doc.expects(:delete_deployment)
+        doc.revert
+      end
+
+      it "does nothing when there is a service but it is old" do
+        doc.instance_variable_set(:'@previous_deploy', daemonset_stub(3, 0))
+        client.expects(:rollback_deployment)
+        doc.revert
+      end
+
+      it "deletes the service when there is no previous deploy" do
+        doc.expects(:delete_deployment)
+        doc.stubs(:service).returns(stub(running?: true, name: 'foo'))
+        doc.client.expects(:delete_service)
         doc.revert
       end
     end
